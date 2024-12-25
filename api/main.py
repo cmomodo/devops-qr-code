@@ -1,13 +1,18 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import logging
 import qrcode
 import boto3
 import os
 from io import BytesIO
-
-# Loading Environment variable (AWS Access Key and Secret Key)
 from dotenv import load_dotenv
+
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -29,50 +34,65 @@ app.add_middleware(
 @app.middleware("http")
 async def errors_handling(request: Request, call_next):
     try:
+        logger.info(f"Processing request to {request.url}")
         return await call_next(request)
     except Exception as exc:
+        logger.error(f"Error processing request: {str(exc)}", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"detail": str(exc)}
+            content={"detail": "Internal server error occurred. Please check logs for details."}
         )
 
-# AWS S3 Configuration
-s3 = boto3.client(
-    's3',
-    aws_access_key_id= os.getenv("AWS_ACCESS_KEY"),
-    aws_secret_access_key= os.getenv("AWS_SECRET_KEY"))
-
-bucket_name = 'capstone-27-bucket' # Add your bucket name here
+# Configure S3 client
+try:
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_KEY'),
+        region_name='us-east-1'  # specify your region
+    )
+    logger.info("Successfully configured S3 client")
+except Exception as e:
+    logger.error(f"Failed to configure S3 client: {str(e)}")
+    raise
 
 @app.post("/generate-qr/")
 async def generate_qr(url: str):
-    # Generate QR Code
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
-
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Save QR Code to BytesIO object
-    img_byte_arr = BytesIO()
-    img.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-
-    # Generate file name for S3
-    file_name = f"qr_codes/{url.split('//')[-1]}.png"
-
     try:
-        # Upload to S3
-        s3.put_object(Bucket=bucket_name, Key=file_name, Body=img_byte_arr, ContentType='image/png', ACL='public-read')
+        # Generate QR code
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(url)
+        qr.make(fit=True)
         
-        # Generate the S3 URL
-        s3_url = f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
-        return {"qr_code_url": s3_url}
+        # Create image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Save to BytesIO
+        img_byte_arr = BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        
+        # Upload to S3
+        file_name = f"qr-{url.replace('/', '-')}.png"
+        bucket_name = 'capstone-27-bucket'
+        
+        try:
+            s3.upload_fileobj(
+                img_byte_arr,
+                bucket_name,
+                file_name,
+                ExtraArgs={'ContentType': 'image/png'}
+            )
+            logger.info(f"Successfully uploaded QR code for {url} to S3")
+            
+            # Generate S3 URL
+            s3_url = f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
+            return {"url": s3_url}
+            
+        except Exception as s3_error:
+            logger.error(f"S3 upload error: {str(s3_error)}")
+            raise HTTPException(status_code=500, detail="Failed to upload to S3")
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        logger.error(f"QR generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate QR code")
