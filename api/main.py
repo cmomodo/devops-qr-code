@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import qrcode
 import boto3
@@ -13,15 +13,28 @@ app = FastAPI()
 
 # Allowing CORS for local testing
 origins = [
-    "http://localhost:3000"
+    "http://localhost:3002"
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_credentials=True,  # Add this
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]    # Add this
 )
+
+# Add error handling middleware
+@app.middleware("http")
+async def errors_handling(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc)}
+        )
 
 # AWS S3 Configuration
 s3 = boto3.client(
@@ -29,7 +42,7 @@ s3 = boto3.client(
     aws_access_key_id= os.getenv("AWS_ACCESS_KEY"),
     aws_secret_access_key= os.getenv("AWS_SECRET_KEY"))
 
-bucket_name = 'YOUR_BUCKET_NAME' # Add your bucket name here
+bucket_name = 'capstone-27-bucket' # Add your bucket name here
 
 @app.post("/generate-qr/")
 async def generate_qr(url: str):
