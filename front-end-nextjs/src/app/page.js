@@ -1,19 +1,33 @@
-'use client'
+"use client";
 
-import { useState } from 'react';
-import axios from 'axios';
+import { useState } from "react";
+import axios from "axios";
 
 export default function Home() {
-  const [url, setUrl] = useState('');
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [url, setUrl] = useState("");
+  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+    setError("");
+
     try {
-      const response = await axios.post(`http://localhost:8000/generate-qr/?url=${url}`);
+      // Ensure URL has proper format
+      const formattedUrl = url.startsWith("http") ? url : `https://${url}`;
+
+      const response = await axios.post("http://localhost:8000/generate-qr/", {
+        url: formattedUrl,
+      });
+
       setQrCodeUrl(response.data.qr_code_url);
     } catch (error) {
-      console.error('Error generating QR Code:', error);
+      setError("Failed to generate QR code. Please ensure URL is valid.");
+      console.error("Error generating QR Code:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -25,57 +39,62 @@ export default function Home() {
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="Enter URL like https://example.com"
+          placeholder="Enter URL (e.g., https://example.com)"
           style={styles.input}
+          required
         />
-        <button type="submit" style={styles.button}>Generate QR Code</button>
+        <button type="submit" style={styles.button} disabled={loading}>
+          {loading ? "Generating..." : "Generate QR Code"}
+        </button>
       </form>
-      {qrCodeUrl && <img src={qrCodeUrl} alt="QR Code" style={styles.qrCode} />}
+
+      {error && <p style={styles.error}>{error}</p>}
+      {qrCodeUrl && (
+        <div style={styles.qrContainer}>
+          <img src={qrCodeUrl} alt="Generated QR Code" style={styles.qrCode} />
+        </div>
+      )}
     </div>
   );
 }
 
-// Styles
 const styles = {
   container: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#121212',
-    color: 'white',
+    padding: "2rem",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
   },
   title: {
-    margin: '0',
-    lineHeight: '1.15',
-    fontSize: '4rem',
-    textAlign: 'center',
+    marginBottom: "2rem",
   },
   form: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
+    width: "100%",
+    maxWidth: "500px",
+    marginBottom: "2rem",
   },
   input: {
-    padding: '10px',
-    borderRadius: '5px',
-    border: 'none',
-    marginTop: '20px',
-    width: '300px',
-    color: '#121212'
-
+    width: "100%",
+    padding: "0.5rem",
+    marginBottom: "1rem",
   },
   button: {
-    padding: '10px 20px',
-    marginTop: '20px',
-    border: 'none',
-    borderRadius: '5px',
-    backgroundColor: '#0070f3',
-    color: 'white',
-    cursor: 'pointer',
+    width: "100%",
+    padding: "0.5rem",
+    backgroundColor: "#0070f3",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+  },
+  error: {
+    color: "red",
+    marginBottom: "1rem",
+  },
+  qrContainer: {
+    marginTop: "2rem",
   },
   qrCode: {
-    marginTop: '20px',
+    maxWidth: "300px",
   },
 };

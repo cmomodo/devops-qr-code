@@ -7,6 +7,7 @@ import boto3
 import os
 from io import BytesIO
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -18,7 +19,7 @@ app = FastAPI()
 
 # Allowing CORS for local testing
 origins = [
-    "http://localhost:3002"
+    "http://localhost:3000"
 ]
 
 app.add_middleware(
@@ -56,9 +57,13 @@ except Exception as e:
     logger.error(f"Failed to configure S3 client: {str(e)}")
     raise
 
+class URLRequest(BaseModel):
+    url: str
+
 @app.post("/generate-qr/")
-async def generate_qr(url: str):
+async def generate_qr(request: URLRequest):
     try:
+        url = request.url
         # Generate QR code
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
         qr.add_data(url)
@@ -87,7 +92,7 @@ async def generate_qr(url: str):
             
             # Generate S3 URL
             s3_url = f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
-            return {"url": s3_url}
+            return {"qr_code_url": s3_url}
             
         except Exception as s3_error:
             logger.error(f"S3 upload error: {str(s3_error)}")
